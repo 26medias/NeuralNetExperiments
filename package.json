@@ -1,0 +1,33 @@
+{
+	"name": 		"experimental-neural-nets",
+	"author": {
+		"name": "Julien Loutre",
+		"email": "julien@twenty-six-medias.com",
+		"url": "http://www.twenty-six-medias.com/"
+	},
+	"description": 	"Experimental Neural Nets",
+	"version":		"0.0.1",
+	"keywords": [],
+	"homepage": "https://github.com/26medias/experimental-neural-nets",
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/26medias/experimental-neural-nets.git"
+	},
+	"bugs": {
+		"url": "https://github.com/26medias/experimental-neural-nets/issues"
+	},
+	"main": "neuralnet.js",
+	"readmeFilename": "README.md",
+	"licenses": [
+	{
+		"type": "MIT"
+	}
+	],
+	"dependencies": {
+		"underscore":	"latest",
+		"toolset":		"latest",
+		"progress":		"latest",
+		"cli-table":	"latest"
+	}
+}
+
