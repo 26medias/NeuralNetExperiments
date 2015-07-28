@@ -2,13 +2,27 @@
 var _			= require("underscore");
 var toolset		= require("toolset");
 var cliTable	= require('cli-table');
+var techChart	= require('techchart');
 
-var neuralnet = function(settings) {
-	this.settings	= settings;				// Settings (learning rate, topology...)
-	this.data		= {};					// Container
+var neuralnet = function(settings, callback) {
+	var scope = this;
+	this.settings		= settings;				// Settings (learning rate, topology...)
+	this.data			= {};					// Container
+	this.evaluateStatus	= false;				// 
+	this.charts			= {
+		error:	[]
+	};
 	
 	/// Setup the net's structure
 	this.init();
+	if (settings.filename) {
+		this.load(settings.filename, function() {
+			toolset.log("this.net",scope.net);
+			callback();
+		});
+	} else {
+		callback();
+	}
 };
 neuralnet.prototype.init = function() {
 	
@@ -51,6 +65,7 @@ neuralnet.prototype.init = function() {
 	
 	// Create the net's data structure
 	this.net		= {
+		trainings:		0,
 		size:			neuronCount,
 		layers:			{
 			topology:	layersTopology,
@@ -59,7 +74,11 @@ neuralnet.prototype.init = function() {
 		},
 		weights:		[],	// Weight is a 2D array [neuronCount][neuronCount]
 		values:			new Float32Array(neuronCount),
-		errors:			new Float32Array(neuronCount)
+		errors:			new Float32Array(neuronCount),
+		error:			{
+			current:	1,
+			target:		this.settings.error.target
+		}
 		//thresholds:		new Float32Array(neuronCount)
 	};
 	
@@ -70,11 +89,11 @@ neuralnet.prototype.init = function() {
 		for (j=0;j<this.net.size;j++) {
 			this.net.weights[i][j]	= Math.random()*2;	// Will require optimization to use less RAM when working on large networks
 		}
-		this.net.values[i]		= Math.random()/Math.random();
+		//this.net.values[i]		= Math.random()/Math.random();
 		//this.net.thresholds[i]	= Math.random()/Math.random();
 	}
 	
-	toolset.log("this.net",this.net);
+	//toolset.log("this.net",this.net);
 	
 	//toolset.log("this.getWeight(0,0,1,0)",this.getWeight(0,0,1,0));
 }
@@ -114,47 +133,67 @@ neuralnet.prototype.activationFunction = function(t) {
 	// Sigmoid by default;
 	return 1/(1+Math.pow(2.71828, 0-t));
 }
-neuralnet.prototype.train = function(pass) {
-	var i,j;
-	var error;
-	for (i=0;i<pass;i++) {
+neuralnet.prototype.train = function() {
+	var i,j,l;
+	var errorSum = 0;
+	do {
+		l			= this.data.training.length;
+		errorSum	= 0;
 		for (j=0;j<this.data.training.length;j++) {
-			this.learn(this.data.training[j]);
+			errorSum += this.learn(this.data.training[j]);
+			this.net.trainings++;
+			if (this.evaluateStatus && this.net.trainings % this.evaluateStatus.step == 0) {
+				//toolset.log("Evaluate", this.net.error.current);
+				this.evaluateStatus.print();
+			}
 		}
-	}
+		// Update the current error
+		this.net.error.current	= errorSum/l;
+		this.charts.error.push(errorSum/l);
+	} while (this.net.error.current > this.net.error.target && this.net.trainings<=100000);
+	this.evaluateStatus.print();
 }
-neuralnet.prototype.evaluate = function() {
-	var j;
-	var output;
-	
-	var table	= new cliTable();
-	var lines	= [];
-	var cols	= [];
-	
-	for (i=0;i<this.data.training.length;i++) {
-		cols	= [];
-		cols.push('input');
-		// Push the inputs
-		for (j=0;j<this.data.training[i][0].length;j++) {
-			cols.push(this.data.training[i][0][j]);
+neuralnet.prototype.chart = function() {
+	var chart = new techChart();
+}
+neuralnet.prototype.evaluate = function(step) {
+	var scope = this;
+	this.evaluateStatus	 = {
+		step:	step,
+		print:	function() {
+			var j;
+			var output;
+			
+			var table	= new cliTable();
+			var lines	= [];
+			var cols	= [];
+			
+			for (i=0;i<scope.data.training.length;i++) {
+				cols	= [];
+				cols.push('input');
+				// Push the inputs
+				for (j=0;j<scope.data.training[i][0].length;j++) {
+					cols.push(scope.data.training[i][0][j]);
+				}
+				// Push a separator
+				cols.push('expect');
+				// Push the expected output
+				for (j=0;j<scope.data.training[i][1].length;j++) {
+					cols.push(scope.data.training[i][1][j]);
+				}
+				// Push a separator
+				cols.push('got');
+				output = scope.test(scope.data.training[i][0], true);
+				for (j=0;j<output.length;j++) {
+					cols.push(output[j].toFixed(4));
+				}
+				table.push(cols);
+				
+			}
+			console.log("Training "+scope.net.trainings);
+			console.log(table.toString());
 		}
-		// Push a separator
-		cols.push('expect');
-		// Push the expected output
-		for (j=0;j<this.data.training[i][1].length;j++) {
-			cols.push(this.data.training[i][1][j]);
-		}
-		// Push a separator
-		cols.push('got');
-		output = this.test(this.data.training[i][0], true);
-		for (j=0;j<output.length;j++) {
-			cols.push(output[j]);
-		}
-		table.push(cols);
-		
 	}
-	
-	console.log(table.toString());
 }
 
 neuralnet.prototype.test = function(input, interpret) {
@@ -180,7 +219,6 @@ neuralnet.prototype.test = function(input, interpret) {
 			this.netSet('values', i, p, this.activationFunction(out));
 		}
 	}
-	//toolset.log("this.data.values",this.data.values);
 	
 	// return the output
 	var output = [];
@@ -188,18 +226,6 @@ neuralnet.prototype.test = function(input, interpret) {
 		output.push(this.netXY('values', this.net.layers.count-1, i));
 	}
 	
-	//console.log("output -> ", output);
-	
-	
-	/*if (interpret) {
-		if (output<=0.4) {
-			return 0;
-		}
-		if (output>=0.6) {
-			return 1;
-		}
-		return 'ir';
-	}*/
 	return output;	// Array of output values
 }
 
@@ -255,6 +281,8 @@ neuralnet.prototype.learn = function(dataset) {
 			// We calculate the error gradient for each of the current layer's neurons
 			errorGradient	= neuronValue*(1-neuronValue)*errorPropagationFactor
 			
+			this.netSet('errors', layer, neuronIndex, errorGradient);
+			
 			// We calculate the new weight
 			for (neuronIndex0=0;neuronIndex0<this.net.layers.topology[layer-1];neuronIndex0++) {
 				this.incWeight(
@@ -265,7 +293,44 @@ neuralnet.prototype.learn = function(dataset) {
 			}
 		}
 	}
-	return sumSquareError;
+	
+	// Test the network
+	output	= this.test(dataset[0]);
+	var error = 0;
+	for (i=0;i<output.length;i++) {
+		error	+= Math.abs(dataset[1][i]-output[i]);
+	}
+	
+	return error/output.length;
 }
 
+neuralnet.prototype.save = function(filename, callback) {
+	toolset.file.writeJson(filename, this.net, callback)
+}
+neuralnet.prototype.objToFloat32 = function(data) {
+	var i;
+	var l = 0;
+	for (i in data) {
+		l++;
+	}
+	var output = new Float32Array(l);
+	for (i in data) {
+		output[i] = data[i];
+	}
+	return output;
+}
+neuralnet.prototype.load = function(filename, callback) {
+	var scope = this;
+	
+	toolset.file.toObject(filename, function(data) {
+		// Now we convert the data
+		scope.net = data;
+		scope.net.values	= scope.objToFloat32(scope.net.errors);
+		scope.net.errors	= scope.objToFloat32(scope.net.errors);
+		_.map(scope.net.weights, function(weightLayer) {
+			return scope.objToFloat32(weightLayer);
+		});
+		callback();
+	})
+}
 module.exports	= neuralnet;
